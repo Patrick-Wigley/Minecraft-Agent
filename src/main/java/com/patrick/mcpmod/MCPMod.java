@@ -27,10 +27,23 @@ public class MCPMod
     // Directly reference a slf4j logger
     public static final Logger LOGGER = LogUtils.getLogger();
 
+    private final Object ClientModEvents = new ClientModEvents();
 
 
     public MCPMod()
     {
+        /*
+            Forge uses two different event buses for different purposes:
+            - The Forge Event Bus (MinecraftForge.EVENT_BUS): This is for gameplay
+            events that happen continuously while the game is running, such as a player
+            picking up an item (EntityItemPickupEvent), breaking a block,
+            or ticking.
+
+            - The Mod Event Bus (FMLJavaModLoadingContext.get().getModEventBus()):
+            This is exclusively for startup and initialization tasks,
+            like registering your items, blocks, and configurations.
+         */
+
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
         // Register the commonSetup method for modloading
@@ -38,9 +51,9 @@ public class MCPMod
 
         // Register ourselves for server and other game events we are interested in
         MinecraftForge.EVENT_BUS.register(this);
+
         // Items
         ModItems.register(modEventBus);
-
 
         // Register the item to a creative tab
         modEventBus.addListener(this::addCreative);

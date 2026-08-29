@@ -38,6 +38,7 @@ public class ClientModEvents {
                         SoundEvents.ANVIL_USE, SoundSource.PLAYERS,
                         1.0F, 1.0F
                 );
+                //player.travel(player.getX() + 10);
             }
         }
     }

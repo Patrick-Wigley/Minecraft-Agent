@@ -9,21 +9,20 @@ import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
-import javax.swing.*;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 @Mod.EventBusSubscriber(modid = MCPMod.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
-public class ExternalApiBridge {
+public class ApiServer {
     public static final ConcurrentLinkedQueue<String> INGAME_CMD_QUEUE = new ConcurrentLinkedQueue<>();
 
     @SubscribeEvent
     public static void onServerStarting(ServerStartingEvent event) {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
-            server.createContext("/MCAction", new ActionHandler());
+            server.createContext("/MCAction", new APIRecvHandle());
+            // Can I create two contexts? the other being /MCGetInfo
             server.setExecutor(null);
             server.start();
             System.out.println("API Started! On port 8080");
@@ -34,8 +33,7 @@ public class ExternalApiBridge {
         }
     }
 
-    static class ActionHandler implements HttpHandler {
-
+    static class APIRecvHandle implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             // POST - Input Into Game - Perform In game actions
@@ -47,8 +45,9 @@ public class ExternalApiBridge {
             else if (exchange.getRequestMethod().equalsIgnoreCase("GET")) {
                 String query = exchange.getRequestURI().getQuery();
                 System.out.println("Recv Get: " + query);
-
+                INGAME_CMD_QUEUE.add(query);
             }
+
         }
     }
 }

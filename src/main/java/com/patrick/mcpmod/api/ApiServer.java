@@ -11,17 +11,19 @@ import net.minecraftforge.fml.common.Mod;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.HashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 @Mod.EventBusSubscriber(modid = MCPMod.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class ApiServer {
     public static final ConcurrentLinkedQueue<String> INGAME_CMD_QUEUE = new ConcurrentLinkedQueue<>();
+    public static final ConcurrentLinkedQueue<HashMap<String, String>> API_REQ_QUEUE = new ConcurrentLinkedQueue<>();
 
     @SubscribeEvent
     public static void onServerStarting(ServerStartingEvent event) {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
-            server.createContext("/MCAction", new APIRecvHandle());
+            server.createContext("/MCRequest", new APIRecvHandle());
             // Can I create two contexts? the other being /MCGetInfo
             server.setExecutor(null);
             server.start();
@@ -39,15 +41,25 @@ public class ApiServer {
             // POST - Input Into Game - Perform In game actions
             if (exchange.getRequestMethod().equalsIgnoreCase("POST")) {
                 String body = new String(exchange.getRequestBody().readAllBytes());
-                System.out.println("Recv Post: " + body);
+                System.out.println("Received a POST");
             }
             // GET - Output From Game - Retrieve In Game Information
             else if (exchange.getRequestMethod().equalsIgnoreCase("GET")) {
                 String query = exchange.getRequestURI().getQuery();
-                System.out.println("Recv Get: " + query);
+                System.out.println("Received a GET");
                 INGAME_CMD_QUEUE.add(query);
+                API_REQ_QUEUE.add(splitURLParam(query));
             }
+        }
 
+        private HashMap<String, String> splitURLParam(String query) {
+            String[] params = query.split("[&]");
+            HashMap<String, String> ret = new HashMap<>();
+            for (String KWPair : params) {
+                String[] KWValues = KWPair.split("[=]");
+                ret.put(KWValues[0], KWValues[1]);
+            }
+            return ret;
         }
     }
 }

@@ -1,6 +1,25 @@
 const mineflayer = require("mineflayer")
 const { Vec3 } = require("vec3")
 
+// API Packages
+const express = require("express")
+const app = express()
+const PORT = 3000
+app.use(express.json())
+
+
+
+app.get("/see", (req, res) => {
+    const blocksData = see4(bot.entity.yaw, bot.entity.pitch)
+
+    res.status(200).json({
+        seenBlocks: blocksData,
+        
+    })
+
+})
+
+
 const bot = mineflayer.createBot({
     host: "localhost",
     port: 43412,
@@ -34,6 +53,7 @@ function see4(new_yaw, new_pitch) {
     const GOLDEN_ANGLE = 2.39996; 
     
     let blocksSeen = [];
+    let blocksSeenReturn = []
 
     // Loop through the ray count. Ray 0 is the dead center, later rays spiral outwards.
     for (let i = 0; i < totalRays; i++) {
@@ -65,6 +85,10 @@ function see4(new_yaw, new_pitch) {
         
         if (block) {
             blocksSeen.push(block)
+            blocksSeenReturn.push({
+                BlockName: block.name,
+                blockPos: block.position
+            })
         }
 
     }
@@ -73,6 +97,8 @@ function see4(new_yaw, new_pitch) {
         const blockPos = block.position
         bot.chat(`/setblock ${blockPos.x} ${blockPos.y} ${blockPos.z} minecraft:red_stained_glass`)   
     })
+    
+    return blocksSeenReturn
 }
 
 
@@ -103,6 +129,7 @@ bot.once("spawn", () => {
 })
 
 bot.on("physicTick", onTick)
+
 
 
 

@@ -2,30 +2,45 @@ const { Vec3 } = require("vec3")
 
 const mineflayer = require("mineflayer")
 const mineflayertool = require("mineflayer-tool").plugin
+const mineflayercollect = require("mineflayer-collectblock").plugin
 const { pathfinder, Movements, goals: { GoalBlock }} = require("mineflayer-pathfinder") 
 
+
+var inGameStatus = {}
 const USERNAME = "Hermes_Gemma4E4b"
-const LAPTOP = "314159"
+const LAPTOP = "192.168.0.28"
+const LOCAL = "localhost"
 const bot = mineflayer.createBot({
-    host: LAPTOP, //"localhost",
+    host: LOCAL, //"localhost",
     port: 43412,
     username: USERNAME,
     // password: "" // If Using Actual Account
     version: "1.21"
 })
 
+
+
 bot.loadPlugin(mineflayertool)
+bot.loadPlugin(mineflayercollect)
 bot.loadPlugin(pathfinder)
 
 // API Packages
 const express = require("express")
+const http = require("node:http")
 const app = express()
 const PORT = 3000
 app.use(express.json())
 
-app.listen(PORT, ()=> {
+const server = http.createServer(app)
+server.headersTimeout = 3650000;     // Time to wait for headers to be parsed (default is typically 60000)
+server.requestTimeout = 3600000;     // Time to wait for the entire request from the client (default 300000)
+server.keepAliveTimeout = 3500000;
+server.timeout = 0;
+server.listen(PORT, ()=> {
     console.log(`BOT SERVER OPEN - Listening for requests on http://localhost:${PORT}`)
 })
+
+
 
 app.get("/chat", (req, res) => {
     console.log("Sending a chat")
@@ -200,11 +215,203 @@ app.get("/status", (req, res) => {
         })
 })
 
+app.get("/findBlocks", (req, res) => {
+    console.log(`[GET]: findBlocks`)
+    
+    if (Object.hasOwn(req.query, "json")){
+        const query = JSON.parse(req.query.json)
+    
+        if (Object.hasOwn(query, "blockName") && Object.hasOwn(query, "maxDistance")) {
+    
+            const searchResults = findBlocks(
+                query.blockName, 
+                query.maxDistance, 
+                query.count ?? 50
+            )
+    
+            return res.status(200).json({
+                AmountFound: searchResults.length,
+                Locations: searchResults
+            });
+        }
+        return res.status(400).json("Missing blockName & maxDistance arguments in URL")
+    }
+    return res.status(400).json("Missing 'json' argument in URL")
+})
 
-//const delay = (time_ms) => new Promise((resolve) => setTimeout(resolve, time_ms))
+// {{"x":0,"y":1,"z":3},{"x":6,"y":5,"z":4}}
+// {{"x":0,"y":64,"z":255},{"x":0,"y":64,"z":254}}
+// [{"x":0,"y":64,"z":255},{"x":0,"y":64,"z":254}]
+// [{"x":-6,"y":66,"z":245},{"x":-6,"y":67,"z":245}]
+// [{"x":-8,"y":70,"z":251},{"x":-8,"y":69,"z":251}]
+
+app.get("/collectBlock", async (req, res) => {
+    console.log(`[GET]: collectBlock`)
+    // Needs to come as array of objs: [{x,y,z}, {...}, ...]
+    //console.log(req.query)
+    
+    if (Object.hasOwn(req.query, "json")) {
+        const blocks = JSON.parse(req.query.json)
+        //console.log(blocks)
+        
+        const blockTargets = []//[bot.blockAt(new Vec3(0, 68, 4)), bot.blockAt(new Vec3(0, 69, 4))]
+        const blockNames = []
+        blocks.forEach((block) =>  {
+            if (Object.hasOwn(block, "x") && (Object.hasOwn(block, "y") && Object.hasOwn(block, "z"))) {
+                const blockInstace = bot.blockAt(new Vec3(block.x, block.y, block.z))
+                console.log("block instance:")
+                console.log(blockInstace)
+                
+                if (blockInstace.name != "air") {
+                    blockTargets.push(blockInstace)
+                    bot.chat(`/me Collecting ${blockInstace.name} at ${blockInstace.position}`)
+                }
+                blockNames.push(blockInstace.name == "air" ? "nothing (no block here)" : blockInstace.name)
+            }
+        });
+        
+        const inventoryBeforeEvent = bot.inventory.items()
+        
+        try {
+            await bot.collectBlock.collect(blockTargets)
+        } catch (err) {
+            bot.chat(`/me ${err.message}`)
+            console.log(err.message)
+        }
+        
+        const inventoryComparison = compareInventorys(inventoryBeforeEvent, bot.inventory.items(), "type", "count");
+        console.log(inventoryComparison);
+
+        return res.status(200).json({
+            "Blocks Attempted to Collect": blockNames,
+            "Inventory Changes During Collection": inventoryComparison, 
+            "Entire Inventory": bot.inventory.items()
+        })
+    }
+    return res.status(400).json("TOOL USE FAILURE: Did not move in-game, cannot parse your inputted JSON query")
+})
+
+app.get("/inventory", (req, res) => {
+    
+    const inventoryItemCounts = getInventoryItemsCounts();
+    res.status(200).json({
+        "Current Inventory Items": inventoryItemCounts
+    })
+})
+
+app.get("/craft", async (req, res) => {
+    console.log("[GET] craft")
+    console.log(req.query)
+
+    if (Object.hasOwn(req.query, "json")) {
+        const query = JSON.parse(req.query.json)
+        const itemName = query.itemName
+        const amount = query.amount ?? 1
+        console.log(query)
+        
+        // Closest Match (fuzzy search)
+        const matches = Object.values(bot.registry.items).filter(item => isCloseMatch(item.name, itemName))
+        if (matches.length > 0) {
+            const nearbyCraftingTable = bot.findBlock({
+                matching: bot.registry.blocksByName.crafting_table.id,
+                maxDistance: 5
+            });
+            console.log(`closest match: ${matches[0].name}, ${matches[0].id}`)
+            const recipes = bot.recipesAll(
+                matches[0].id, 
+                null, 
+                { type: bot.registry.blocksByName.crafting_table.id, name: 'crafting_table', displayName: 'Crafting Table' }
+            )
+
+            if (recipes.length === 0) {
+                return res.status(200).json(`Failure, couldn't find reciepe for '${itemName}'`)
+
+                
+            } else {
+                bot.chat(`/me I am crafting ${amount}x ${itemName}...`);
+                let failedRecipes = []
+                let recipeID = 0
+
+                const inventoryItemsCounts = getInventoryItemsCounts()
+
+                for (const recipe of recipes) {
+                    // Try every recipe (wooden pickaxe can be built using: oak_planks, spruce_planks, birch_planks, etc)
+                    recipeID += 1
+
+                    try {
+                        const inventoryBeforeEventtest = getInventoryItemsCounts()
+                        const inventoryBeforeEvent = bot.inventory.items()
+
+                        await bot.craft(recipe, amount, recipe.requiresTable ? nearbyCraftingTable : null);
+                        bot.chat(`/me Successfully crafted ${itemName}!`);
+
+                        const inventoryComparison = compareInventorys(inventoryBeforeEvent, bot.inventory.items(), "type", "count");
+                        return res.status(200).json({
+                            "Status": `${amount} ${itemName} was crafted`,
+                            "Inventory Changes After Crafting": inventoryComparison, 
+                            "Entire Inventory": bot.inventory.items()
+                        })
+
+                    } catch (err) {                        
+                        if (err.message.includes("missing ingredient")){
+                            const missingIngredients = getMissingIngredients(bot, recipe, inventoryItemsCounts)
+                            failedRecipes.push({
+                                "recipe id": recipeID, // TODO: To eventually let agent know which recipe is closest to finishing (using totalMissing)
+                                "Total Missing": missingIngredients.totalMissing,
+                                //"Ingredients Required": recipe.inShape.flat().filter(recipe => recipe.id != -1),
+                                "Missing Ingredients": missingIngredients.items
+                            })
+                        } 
+                        
+                        else if (recipe.requiresTable && !nearbyCraftingTable) {
+                            bot.chat("/me I need to find a crafting table!")
+                            return res.status(200).json(`Can't craft '${itemName}': You need to be near a crafting table`)
+                        }
+                    }
+                }
+                console.log("Finished trying")
+    
+                bot.chat(`/me I am missing ingredients!`);
+                
+                const recipesSortedByClosenessToCompletion = failedRecipes
+                recipesSortedByClosenessToCompletion.sort(((recipe1, reciepe2) => recipe1["Total Missing"] - reciepe2["Total Missing"]))
+
+                return res.status(200).json({
+                    "Status": `Could not craft ${itemName}, you are missing ingredients`,
+                    "Closest RecipeID To Successful Craft": recipesSortedByClosenessToCompletion[0]["recipe id"],
+
+                    "Recipe Combinations Tried": recipesSortedByClosenessToCompletion
+                })
+            }
 
 
-var inGameStatus = {}
+            // By the end of this loop, if not returned status, then was unsuccessful in finding a recipe
+        }
+        return res.status(200).json(`Failure, couldnt't find item '${itemName}' in minecrafts item registry`)
+    }
+    return res.status(200).json("Failure, Missing required json argument?")
+    
+})
+
+
+
+function findBlocks(blockName, maxDistance, maxCount) {
+        
+        const searchResult = bot.findBlocks({
+            matching: (block) => {
+                return isCloseMatch(block.name, blockName, 2)
+            }, 
+            maxDistance: maxDistance,
+            count: maxCount
+        })
+        if (searchResult.length > 1)
+            bot.chat(`/me I see ${searchResult.length} ${blockName}`)
+        else 
+            bot.chat(`/me I see no ${blockName}`)
+            
+        return searchResult
+}
+
 
 function getDirectionVector(p, y) {
     const cosPitch = Math.cos(p);
@@ -213,7 +420,6 @@ function getDirectionVector(p, y) {
     const sinYaw = Math.sin(y);
     return new Vec3(-sinYaw * cosPitch, -sinPitch, -cosYaw * cosPitch);
 }
-
 
 
 async function see(query) {
@@ -256,9 +462,6 @@ async function see(query) {
     } else {
         console.log("[BOT] Not moving head!")
     }
-
-    //const radian_to_deg = (rad) => {return rad * (180/PI)}
-
 
     const pitch =   new_pitch-3.14159 //bot.entity.pitch;
     const yaw =     new_yaw-3.14159 //bot.entity.yaw;
@@ -377,22 +580,118 @@ bot.once("spawn", () => {
     setTimeout(() => {
         console.log("Bot In Game")
         bot.chat("/me Setting Status")
-        bot.chat("/gamerule sendCommandFeedback false")
-        bot.chat("/gamerule doTileDrops false")
-        
-        
-
+        bot.chat("/gamerule sendCommandFeedback false")     
     }, 1000)
 })
 
-if (false)
-    bot.on("physicTick", onTick)
+
+// Helpful Tools
+
+function levenshteinDistance(str1, str2) {
+  // Normalize formatting first
+  const s1 = str1.replace(/_/g, ' ').toLowerCase();
+  const s2 = str2.replace(/_/g, ' ').toLowerCase();
+
+  const track = new Array(s2.length + 1).fill(null).map(() => 
+    new Array(s1.length + 1).fill(null)
+  );
+  
+  for (let i = 0; i <= s1.length; i += 1) track[0][i] = i;
+  for (let j = 0; j <= s2.length; j += 1) track[j][0] = j;
+  
+  for (let j = 1; j <= s2.length; j += 1) {
+    for (let i = 1; i <= s1.length; i += 1) {
+      const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
+      track[j][i] = Math.min(
+        track[j - 1][i] + 1, // deletion
+        track[j][i - 1] + 1, // insertion
+        track[j - 1][i - 1] + indicator // substitution
+      );
+    }
+  }
+  return track[s2.length][s1.length];
+}
+
+function isCloseMatch(str1, str2, sensitivity = 2) {
+  return levenshteinDistance(str1, str2) <= sensitivity;
+}
+
+function compareInventorys(oldArray, newArray, idKey = 'type', compareKey = 'count') {
+  const oldMap = new Map(oldArray.map(item => [item[idKey], item]));
+  
+  const newItems = [];
+  const updatedItems = [];
+
+  for (const newItem of newArray) {
+    const oldItem = oldMap.get(newItem[idKey]);
+
+    if (!oldItem) {
+      newItems.push(newItem);
+    } else if (oldItem[compareKey] !== newItem[compareKey]) {
+      updatedItems.push(newItem);
+    }
+  }
+
+  return { updatedItems, newItems };
+}
 
 
+function getMissingIngredients(bot, recipe, inventoryItemCounts) {
+  
+    const requiredIngredients = {}
+    const ingredients = recipe.inShape.flat()
+    ingredients.forEach(ingredient => {
+        if (ingredient) {
+            if (ingredient.id != -1){
+                const ingredientName = bot.registry.items[ingredient.id].name;
+                
+                if (Object.hasOwn(requiredIngredients, ingredientName)){ requiredIngredients[ingredientName] += ingredient.count } 
+                else { requiredIngredients[ingredientName] = ingredient.count }
+            }
+        }
+    });
+
+    
+    let missingItems = {items:{}, totalMissing: 0}
+    // console.log(`RequiredItems: ${JSON.stringify(requiredIngredients)}`)
+    // console.log(`   InventoryItems: ${JSON.stringify(inventoryItemCounts)}`)
+
+    // can put this logic into forEach above to improve efficiency if can be arsed to
+    Object.entries(requiredIngredients).forEach(([ingredient, requiredCount]) => {
+        if (Object.hasOwn(inventoryItemCounts, ingredient)) {
+            // have item or some of item required
+            if ((inventoryItemCounts[ingredient] - requiredCount < 0)) {
+                // Missing some - If we have this ingredient then pass over it
+                const amountMissing = requiredCount - inventoryItemCounts[ingredient]
+                missingItems.items[ingredient] = amountMissing
+                missingItems.totalMissing += amountMissing
+            } 
+        } else {
+            // Have non of this ingredient
+            missingItems.items[ingredient] = requiredCount
+            missingItems.totalMissing += requiredCount
+        }
+
+    })
+
+   // console.log(`       Missing: ${JSON.stringify(missingItems)}`)
+
+    return missingItems;
+}
+
+function getInventoryItemsCounts() {
+    const inventoryItemCounts = {};
+    bot.inventory.items().forEach(item => {
+        if (item) {
+            if (Object.hasOwn(inventoryItemCounts, item.name)){ inventoryItemCounts[item.name] += item.count } 
+            else { inventoryItemCounts[item.name] = item.count }
+        }
+    });
+    return inventoryItemCounts
+}
 
 
-
-
+// { newItems: [{ id: 3, name: 'Orange', count: 12 }], updatedItems: [] }
 
 
 

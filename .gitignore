@@ -1,2 +1,20 @@
+# IDE 
+#- VSCode
+.vscode/ 
+
+# Cache
+__pycache__/
+
+# Node, Go & Py Ignores
 node_modules/
 builds/
+#- Python
+#-- Virtual Environments
+v/
+.venv/
+
+# For Debugging
+
+# Hermes Agent: https://hermes-agent.nousresearch.com/docs/guides/python-library    - NO LONGER USING
+hermes-agent/   
+temp.*

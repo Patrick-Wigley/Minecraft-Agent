@@ -41,9 +41,22 @@ server.listen(PORT, ()=> {
 })
 
 
+const tracked_chat = []
+app.get("/checkChat", (req, res) => {
+    if (tracked_chat.length > 0) { 
+        const new_msg = tracked_chat.pop()
+        console.log("Returning new chat")
+        return res.status(200).json(new_msg) 
+    }
+    else { return res.status(200).json()}
+})
+
+bot.on("chat", (username, message) => {
+    tracked_chat.push({username:username, message:message})
+})
 
 app.get("/chat", (req, res) => {
-    console.log("Sending a chat")
+    console.log(`[GET] /chat - ${req.query}`)
     if (Object.hasOwn(req.query, "message")) {
         bot.chat(`/me ${req.query.message}`)
         return res.status(200).json("SUCCESS: In-game chat sent")

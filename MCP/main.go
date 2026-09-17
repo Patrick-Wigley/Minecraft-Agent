@@ -135,7 +135,7 @@ func main() {
 		),
 	)
 	CheckInventoryAction := mcp.NewTool("checkInventory",
-		mcp.WithDescription("Returns a JSON of your players current inventory items - Takes no arguments"),
+		mcp.WithDescription("Returns a JSON of your players current inventory items"),
 	)
 	CraftAction := mcp.NewTool("craftItems",
 		mcp.WithDescription("Returns JSON of your players updated inventory during crafting process on success OR Returns error and reason (e.g. reciepe requirements limitation in game, no nearby crafting table, and etc)"),
@@ -149,6 +149,9 @@ func main() {
 			mcp.DefaultNumber(1),
 		),
 	)
+	CheckChatAction := mcp.NewTool("checkChat",
+		mcp.WithDescription("Returns list of any new chats (empty if no new chats)"),
+	)
 
 	ser.AddTool(ChatAction, Chat)
 	ser.AddTool(MoveAction, Move)
@@ -158,6 +161,7 @@ func main() {
 	ser.AddTool(FindBlocksAction, FindBlocks)
 	ser.AddTool(CheckInventoryAction, CheckInventory)
 	ser.AddTool(CraftAction, craftItems)
+	ser.AddTool(CheckChatAction, CheckChat)
 
 	// Begin to serve
 	if err := server.ServeStdio(ser); err != nil {
@@ -227,6 +231,13 @@ func JSON_API_GET(page string, JSONContent any) ([]byte, error) {
 
 /* Specific */
 
+func CheckChat(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	response, err := API_GET("checkChat", map[string]string{"": ""})
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText(string(response)), nil
+}
 func Chat(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	message, err := req.RequireString("message")
 	if err != nil {

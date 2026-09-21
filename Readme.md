@@ -8,9 +8,10 @@ Simple self-coded python based agent
 
 
 ### In progess
-- LangChain & LangGraph based agent
+- Can utilise the new, fast & efficient decision model "Jev" released the other day by TypeSafe. Although only limited to 50 uses a day
 
-- RAG Agent
+- LangChain & LangGraph based agent
+- Using Neo4J & converting LLM thoughts into entities & relationships (knowledge graph)
     - 1. For reteiving details about progressing in the game
     - 2. For remembering important things within the game/world instance
 
